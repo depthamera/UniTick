@@ -6,25 +6,16 @@ using UnityEngine.PlayerLoop;
 
 namespace UniTick.LowLevel
 {
-    /// <summary>
-    /// Unity PlayerLoop의 Update 단계에 커스텀 시간 시스템 마커를 삽입하고 관리합니다.
-    /// </summary>
     public static class CustomLoopManager
     {
-        // Profiler에 표시될 고유 마커 타입
-        public struct CustomTimeSystemMarker { }
+        public struct FixedTickDispatcher { }
 
-        /// <summary>
-        /// 커스텀 시간 루프에서 매 프레임 발생하는 업데이트 이벤트
-        /// </summary>
-        public static event Action OnCustomTimeUpdate;
 
 #if UNITY_EDITOR
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStatics()
         {
-            // Domain Reload 비활성화 대응 (Enter Play Mode Options)
-            OnCustomTimeUpdate = null;
+            ResetLoop();
         }
 #endif
 
@@ -33,11 +24,11 @@ namespace UniTick.LowLevel
         {
             PlayerLoopSystem currentLoop = PlayerLoop.GetCurrentPlayerLoop();
 
-            RemoveSystem(ref currentLoop, typeof(CustomTimeSystemMarker));
+            RemoveSystem(ref currentLoop, typeof(FixedTickDispatcher));
 
-            PlayerLoopSystem customSystem = new PlayerLoopSystem
+            PlayerLoopSystem customSystem = new()
             {
-                type = typeof(CustomTimeSystemMarker),
+                type = typeof(FixedTickDispatcher),
                 updateDelegate = OnCustomUpdate
             };
 
@@ -51,7 +42,15 @@ namespace UniTick.LowLevel
         {
             if (!Application.isPlaying) return;
 
-            OnCustomTimeUpdate?.Invoke();
+        }
+
+        private static void ResetLoop()
+        {
+            PlayerLoopSystem currentLoop = PlayerLoop.GetCurrentPlayerLoop();
+            if (RemoveSystem(ref currentLoop, typeof(FixedTickDispatcher)))
+            {
+                PlayerLoop.SetPlayerLoop(currentLoop);
+            }
         }
 
 #if UNITY_EDITOR
@@ -60,20 +59,15 @@ namespace UniTick.LowLevel
         {
             UnityEditor.EditorApplication.playModeStateChanged += state =>
             {
-                // 플레이 모드를 나갈 때 내 노드만 깔끔하게 제거
                 if (state == UnityEditor.PlayModeStateChange.ExitingPlayMode)
                 {
-                    PlayerLoopSystem currentLoop = PlayerLoop.GetCurrentPlayerLoop();
-                    if (RemoveSystem(ref currentLoop, typeof(CustomTimeSystemMarker)))
-                    {
-                        PlayerLoop.SetPlayerLoop(currentLoop);
-                    }
+                    ResetLoop();
                 }
             };
         }
 #endif
 
-        // 특정 마커 타입을 트리에서 재귀적으로 찾아 제거
+
         public static bool RemoveSystem(ref PlayerLoopSystem root, Type targetMarkerType)
         {
             if (root.subSystemList == null || root.subSystemList.Length == 0)
@@ -88,6 +82,7 @@ namespace UniTick.LowLevel
                 {
                     list.RemoveAt(i);
                     removed = true;
+                    break;
                 }
                 else
                 {

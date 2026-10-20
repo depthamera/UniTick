@@ -1,5 +1,7 @@
 ﻿<Solution>
+  <Project Path="SamplePuzzle.csproj" />
   <Project Path="Assembly-CSharp-Editor.csproj" />
+  <Project Path="Tests.csproj" />
   <Project Path="UniTick.Runtime.csproj" />
   <Project Path="Assembly-CSharp.csproj" />
 </Solution>
