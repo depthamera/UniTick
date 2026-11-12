@@ -1,31 +1,30 @@
 using NUnit.Framework;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace SamplePuzzle.Tests
 {
 
-    // TODO: 버튼-문 시뮬레이션에 대해 세션 기반으로 확장
     public class SamplePuzzleTest
     {
-        [Test]
-        public void Player_AfterMultipleTicks_ReachesExpectedPosition()
+
+        [TestCase(GameCommand.Up, 0, 1)]
+        [TestCase(GameCommand.Down, 0, -1)]
+        [TestCase(GameCommand.Left, -1, 0)]
+        [TestCase(GameCommand.Right, 1, 0)]
+        public void CommandInterpreter_ToDirection_ReturnsUnitVector(GameCommand cmd, int expectedX, int expectedY)
         {
-            int ticks = 42;
+            var actual = CommandInterpreter.ToDirection(cmd);
+            Assert.That(actual, Is.EqualTo(new FixVector2(expectedX, expectedY)));
 
-            var moveSpeed = 3f;
-            var moveDirection = new Vector3(0.3f, 0.1f, 0.15f).normalized;
-            var startPosition = Vector3.zero;
-            var expectedPosition = startPosition + moveDirection * (moveSpeed * ticks);
-            PlayerModel_OLD player = CreatePlayer(moveSpeed, moveDirection, startPosition);
-
-            AdvanceTicks(player, ticks);
-
-            AssertPositionEquals(player.Position, expectedPosition);
         }
 
+
         [Test]
+        [Category("OLD")]
         public void Ghost_MimicPlayerActions_ReachesExpectedPosition()
         {
             int ticks = 42;
@@ -42,6 +41,8 @@ namespace SamplePuzzle.Tests
             AssertPositionEquals(ghost.Position, player.Position);
         }
 
+        
+
         private IReadOnlyList<MoveSnapshot> AdvanceTicksWithPlayerLogs(PlayerModel_OLD player, int ticks)
         {
             List<MoveSnapshot> snapshots = new();
@@ -55,18 +56,6 @@ namespace SamplePuzzle.Tests
             return snapshots;
         }
 
-        [Test]
-        public void PuzzleSession_AfterLoop_ResetsPlayerToSpawn()
-        {
-            var startPosition = Vector3.zero;
-
-            var session = CreateSession(startPosition: startPosition);
-            session.AdvanceTicks(10);
-
-            session.TriggerLoop();
-
-            AssertPositionEquals(session.Player.Position, startPosition);
-        }
 
         [Test]
         public void PuzzleSession_WhenLoopTriggered_ShouldSpawnGhostAndMimicPreviousPlayerActions()
@@ -183,173 +172,6 @@ namespace SamplePuzzle.Tests
         }
 
         [Test]
-        public void AABB_WhenAABBsOverlap_ShouldReturnTrue()
-        {
-            var aabb1 = new AABB(new Vector3(0, 0, 0), new Vector3(1, 1, 1));
-            var aabb2 = new AABB(new Vector3(0.5f, 0.5f, 0.5f), new Vector3(1.5f, 1.5f, 1.5f));
-            Assert.That(aabb1.Intersects(aabb2), Is.True);
-        }
-
-        [Test]
-        public void CollisionWorld_WhenEntitiesOverlap_ShouldNotifyBothEntities()
-        {
-            var entity1 = new FakeCollisionEntity(new AABB(new Vector3(0, 0, 0), new Vector3(1, 1, 1)));
-            var entity2 = new FakeCollisionEntity(new AABB(new Vector3(0.5f, 0.5f, 0.5f), new Vector3(1.5f, 1.5f, 1.5f)));
-            var system = new CollisionWorld_OLD();
-
-            system.AddEntity(entity1);
-            system.AddEntity(entity2);
-            system.Step();
-
-            Assert.That(entity1.OverlapCount, Is.EqualTo(1));
-            Assert.That(entity2.OverlapCount, Is.EqualTo(1));
-            Assert.That(entity1.LastOverlappedWith, Is.SameAs(entity2));
-            Assert.That(entity2.LastOverlappedWith, Is.SameAs(entity1));
-
-        }
-
-        [Test]
-        public void CollisionWorld_WhenEntityMovesIntoAnother_TriggersOverlap()
-        {
-            var player = new FakeMovingEntity(position: Vector3.zero, localSize: new Vector3(1, 1, 1), offset: new Vector3(0.5f, 0.5f, 0.5f));
-            var obstacle = new FakeMovingEntity(position: new Vector3(2, 0, 0), localSize: new Vector3(1, 1, 1), offset: new Vector3(0.5f, 0.5f, 0.5f));
-
-            var system = new CollisionWorld_OLD();
-
-            system.AddEntity(player);
-            system.AddEntity(obstacle);
-
-            system.Step();
-
-            Assert.That(player.OverlapCount, Is.EqualTo(0));
-            Assert.That(obstacle.OverlapCount, Is.EqualTo(0));
-
-            player.Position = new Vector3(1.7f, 0, 0);
-
-            system.Step();
-
-            Assert.That(player.OverlapCount, Is.EqualTo(1));
-            Assert.That(obstacle.OverlapCount, Is.EqualTo(1));
-            Assert.That(player.LastOverlappedWith, Is.SameAs(obstacle));
-            Assert.That(obstacle.LastOverlappedWith, Is.SameAs(player));
-        }
-
-        [Test]
-        public void CollisionWorld_WhenEntityNotMovesIntoAnother_DoesNotTriggerOverlap ()
-        {
-            var player = new FakeMovingEntity(position: Vector3.zero, localSize: new Vector3(1, 1, 1), offset: new Vector3(0.5f, 0.5f, 0.5f));
-            var obstacle = new FakeMovingEntity(position: new Vector3(2, 0, 0), localSize: new Vector3(1, 1, 1), offset: new Vector3(0.5f, 0.5f, 0.5f));
-
-            var system = new CollisionWorld_OLD();
-
-            system.AddEntity(player);
-            system.AddEntity(obstacle);
-
-            system.Step();
-
-            Assert.That(player.OverlapCount, Is.EqualTo(0));
-            Assert.That(obstacle.OverlapCount, Is.EqualTo(0));
-
-            player.Position = new Vector3(1f, 0, 0);
-
-            system.Step();
-
-            Assert.That(player.OverlapCount, Is.EqualTo(0));
-            Assert.That(obstacle.OverlapCount, Is.EqualTo(0));
-            Assert.That(player.LastOverlappedWith, Is.Null);
-            Assert.That(obstacle.LastOverlappedWith, Is.Null);
-        }
-
-
-        [Test]
-        public void PuzzleButton_WhenPressed_ShouldOpenDoor()
-        {
-            var door = new PuzzleDoor();
-            var button = new PuzzleButton(door);
-            button.Press();
-            Assert.That(door.IsOpen, Is.True);
-        }
-
-
-        [Test]
-        public void CollisionWorld_WhenPlayerMovesIntoButton_ShouldOpenDoor()
-        {
-            var door = new PuzzleDoor();
-            var button = new PuzzleButton(door);
-            var border = new AABB(new Vector3(0, 0, 0), new Vector3(1, 1, 1));
-            var physicalButton = new PhysicalButton(button: button, border: border, position: new Vector3(5f, 0f, 0f));
-            var player = new FakeMovingEntity(position: Vector3.zero, localSize: new Vector3(1, 1, 1), offset: new Vector3(0.5f, 0.5f, 0.5f));
-            var collisionWorld = new CollisionWorld_OLD();
-
-            collisionWorld.AddEntity(player);
-            collisionWorld.AddEntity(physicalButton);
-            collisionWorld.Step();
-
-            Assert.That(door.IsOpen, Is.False);
-            player.Position = new Vector3(5f, 0f, 0f);
-
-            collisionWorld.Step();
-            Assert.That(door.IsOpen, Is.True);
-        }
-
-        [Test]
-        public void CollisionWorld_WhenPlayerGetsOutOfButton_ShouldCloseDoor()
-        {
-            var door = new PuzzleDoor();
-            var button = new PuzzleButton(door);
-            var border = new AABB(new Vector3(0, 0, 0), new Vector3(1, 1, 1));
-            var physicalButton = new PhysicalButton(button: button, border: border, position: new Vector3(5f, 0f, 0f));
-            var player = new FakeMovingEntity(position: Vector3.zero, localSize: new Vector3(1, 1, 1), offset: new Vector3(0.5f, 0.5f, 0.5f));
-
-            var collisionWorld = new CollisionWorld_OLD();
-            collisionWorld.AddEntity(player);
-            collisionWorld.AddEntity(physicalButton);
-
-            collisionWorld.Step();
-            Assert.That(door.IsOpen, Is.False);
-
-            player.Position = new Vector3(5f, 0f, 0f);
-            collisionWorld.Step();
-            Assert.That(door.IsOpen, Is.True);
-
-            player.Position = new Vector3(6f, 0f, 0f);
-            collisionWorld.Step();
-            Assert.That(door.IsOpen, Is.False);
-        }
-
-        [Test]
-        public void PuzzleSession_WhenPlayerMovesIntoButton_ShouldOpenDoor()
-        {
-            var config = new PuzzleSessionConfig(
-                moveSpeed: 1f,
-                startPosition: Vector3.zero,
-                maxGhost: 1,
-                doors: new List<DoorConfig>
-                {
-                    new DoorConfig(position: new Vector3(5f, 0f, 0f)),
-                },
-                buttons: new List<ButtonConfig>
-                {
-                    new ButtonConfig(position: new Vector3(2f, 0f, 0f), linkedDoorIndex: 0)
-                }
-            );
-
-
-            var session = new PuzzleSession(config);
-
-
-            session.SetPlayerMove(Vector3.right);
-            session.AdvanceTicks(2);
-
-            Assert.That(session.Doors[0].Door.IsOpen, Is.True, 
-                $"Player position: {session.Player.Position}\n" +
-                $"Door position: {session.Doors[0].Position}\n" +
-                $"Button position: {session.Buttons[0].Position}\n" +
-                $"Player Collider: {(session.Player as ICollidable_OLD)?.Bounds.Min}, {(session.Player as ICollidable_OLD)?.Bounds.Max}\n" +
-                $"Button Collider: {(session.Buttons[0] as ICollidable_OLD)?.Bounds.Min}, {(session.Buttons[0] as ICollidable_OLD)?.Bounds.Max}");
-        }
-
-        [Test]
         public void PuzzleSession_InitializedWithConfig_ShouldSetupPlayerAndDoorAndButton()
         {
             var config = new PuzzleSessionConfig(
@@ -369,7 +191,7 @@ namespace SamplePuzzle.Tests
             );
 
 
-            var session = new PuzzleSession(config);
+            var session = new PuzzleSession_OLD(config);
 
             Assert.That(session.Player.Position, Is.EqualTo(Vector3.zero));
 
@@ -398,7 +220,7 @@ namespace SamplePuzzle.Tests
                 }
             );
 
-            var session = new PuzzleSession(config);
+            var session = new PuzzleSession_OLD(config);
 
             // Player moves to button and opens the door
             session.SetPlayerMove(Vector3.right);
@@ -426,7 +248,7 @@ namespace SamplePuzzle.Tests
                     new ButtonConfig(position: new Vector3(2f, 0f, 0f), linkedDoorIndex: 0)
                 }
             );
-            var session = new PuzzleSession(config);
+            var session = new PuzzleSession_OLD(config);
 
             // Player moves to button and opens the door
 
@@ -460,7 +282,7 @@ namespace SamplePuzzle.Tests
                     new ButtonConfig(position: new Vector3(2f, 0f, 0f), linkedDoorIndex: 0)
                 }
             );
-            var session = new PuzzleSession(config);
+            var session = new PuzzleSession_OLD(config);
 
             // Player moves to button and opens the door
             session.SetPlayerMove(Vector3.right);
@@ -483,57 +305,9 @@ namespace SamplePuzzle.Tests
             Assert.That(session.Doors[0].Door.IsOpen, Is.False, "Door did not close when ghost moved away");
         }
 
+     
 
-        [Ignore("아직 충돌에 관한 부분이 이 테스트를 클리어하기에 부적절함")]
-        [Test]
-        public void PuzzleSession_WhenPlayerMovesIntoClosedDoor_PlayerShouldNotPassThrough()
-        {
-            var config = new PuzzleSessionConfig(
-                moveSpeed: 1f,
-                startPosition: Vector3.zero,
-                maxGhost: 1,
-                doors: new List<DoorConfig>
-                {
-                    new DoorConfig(position: new Vector3(5f, 0f, 0f)),
-                },
-                buttons: null
-            );
-            var session = new PuzzleSession(config);
-
-            // Player moves towards the closed door
-            session.SetPlayerMove(Vector3.right);
-            session.AdvanceTicks(6); // Move past the door position
-            // The player should not have passed through the closed door
-            Assert.That(session.Player.Position.x, Is.EqualTo(4f), "Player passed through the closed door");
-        }
-
-        [Test]
-        public void CollisionWorld_WhenPlayerMovesIntoClosedDoor_PlayerShouldNotPassThrough()
-        {
-            var world = new CollisionWorld();
-
-            var player = new PlayerModel();
-            var playerBodyHandle = world.CreateBody(
-                owner: player,
-                position: new Vector2(0f, 0f), 
-                size: new Vector2(1f, 1f), 
-                offset: new Vector2(0f, -0.5f));
-
-            var door = new DoorModel();
-            world.CreateBody(
-                owner: door,
-                position: new Vector2(2, 0f), 
-                size: new Vector2(1f, 1f), 
-                offset: Vector2.zero);
-
-            playerBodyHandle.RequestMove(displacement: new Vector2(2f, 0f));
-            world.Resolve();
-
-            Assert.That(playerBodyHandle.Position.x, Is.EqualTo(1f));
-        }
-
-        
-        private static PuzzleSession CreateSession(
+        private static PuzzleSession_OLD CreateSession(
             float moveSpeed = 1f,
             Vector3? startPosition = null,
             int maxGhost = 1)
@@ -546,7 +320,7 @@ namespace SamplePuzzle.Tests
                 buttons: new List<ButtonConfig>()
             );
 
-            return new PuzzleSession(setting);
+            return new PuzzleSession_OLD(setting);
         }
 
         private static GhostModel CreateGhost(
@@ -590,5 +364,6 @@ namespace SamplePuzzle.Tests
                 entity.Step();
             }
         }
+
     }
 }

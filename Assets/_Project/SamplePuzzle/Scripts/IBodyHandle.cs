@@ -1,11 +1,7 @@
-﻿using UnityEngine;
-
-namespace SamplePuzzle
+﻿namespace SamplePuzzle
 {
     public interface IBodyHandle
     {
-        public Vector2 Position { get; }
-
-        public void RequestMove(Vector2 displacement);
+        public FixVector2 Position { get; }
     }
 }

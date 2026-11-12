@@ -7,7 +7,7 @@ namespace SamplePuzzle
 { 
     public interface ICollidable_OLD
     {
-        AABB Bounds { get; }
+        AABB_Old Bounds { get; }
         Vector3 Offset { get; }
         bool IsTrigger { get; }
         bool IsStatic { get; }

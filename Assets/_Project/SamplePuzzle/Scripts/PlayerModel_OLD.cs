@@ -12,7 +12,7 @@ namespace SamplePuzzle
 
         public Vector3 Position => _position;
 
-        public AABB Bounds => new AABB(Vector3.zero, new Vector3(1, 1, 0)).Translate(Position);
+        public AABB_Old Bounds => new AABB_Old(Vector3.zero, new Vector3(1, 1, 0)).Translate(Position);
 
         public Vector3 Offset { get; }
         public bool IsTrigger => false;

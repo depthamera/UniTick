@@ -6,20 +6,20 @@ namespace SamplePuzzle
     public class PhysicalButton : ICollidable_OLD
     {
         private PuzzleButton _button;
-        private AABB _border;
+        private AABB_Old _border;
         private Vector3 _position;
 
         private HashSet<ICollidable_OLD> _overlappingEntities = new HashSet<ICollidable_OLD>();
 
         public Vector3 Position => _position;
-        public PhysicalButton(PuzzleButton button, AABB border, Vector3 position, Vector3 offset = default)
+        public PhysicalButton(PuzzleButton button, AABB_Old border, Vector3 position, Vector3 offset = default)
         {
             _button = button;
             _border = border;
             _position = position;
             Offset = offset;
         }
-        public AABB Bounds => _border.Translate(_position);
+        public AABB_Old Bounds => _border.Translate(_position);
 
         public Vector3 Offset { get; }
 

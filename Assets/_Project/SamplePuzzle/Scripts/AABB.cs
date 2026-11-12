@@ -1,15 +1,13 @@
-﻿
-using System;
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace SamplePuzzle
 {
     public struct AABB
     {
-        public Vector3 Min { get; set; }
-        public Vector3 Max { get; set; }
+        public FixVector2 Min { get; set; }
+        public FixVector2 Max { get; set; }
 
-        public AABB(Vector3 min, Vector3 max)
+        public AABB(FixVector2 min, FixVector2 max)
         {
             Min = min;
             Max = max;
@@ -17,11 +15,11 @@ namespace SamplePuzzle
 
         public readonly bool Intersects(AABB other)
         {
-            return Min.x < other.Max.x && Max.x > other.Min.x &&
-                   Min.y < other.Max.y && Max.y > other.Min.y;
+            return Min.X < other.Max.X && Max.X > other.Min.X &&
+                   Min.Y < other.Max.Y && Max.Y > other.Min.Y;
         }
 
-        public AABB Translate(Vector3 position)
+        public AABB Translate(FixVector2 position)
         {
             return new AABB(Min + position, Max + position);
         }

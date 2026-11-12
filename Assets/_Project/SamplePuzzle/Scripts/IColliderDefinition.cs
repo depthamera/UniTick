@@ -3,6 +3,6 @@
     public interface IColliderDefinition
     {
         public string DefinitionId { get; }
-        public AABB AABB { get; }
+        public AABB_Old AABB { get; }
     }
 }

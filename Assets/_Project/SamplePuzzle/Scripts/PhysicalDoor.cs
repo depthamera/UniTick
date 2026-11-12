@@ -12,16 +12,16 @@ namespace SamplePuzzle
         public Vector3 Position => _position;
 
 
-        public AABB Bounds => _aABB.Translate(_position);
+        public AABB_Old Bounds => _aABB.Translate(_position);
 
         public Vector3 Offset { get; }
 
-        private AABB _aABB;
+        private AABB_Old _aABB;
         private Vector3 _position;
 
         public bool IsTrigger => true;
         public bool IsStatic => true;
-        public PhysicalDoor(PuzzleDoor door, AABB aABB, Vector3 position, Vector3 offset = default)
+        public PhysicalDoor(PuzzleDoor door, AABB_Old aABB, Vector3 position, Vector3 offset = default)
         {
             Door = door;
             _aABB = aABB;

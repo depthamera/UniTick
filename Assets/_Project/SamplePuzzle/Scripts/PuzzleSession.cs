@@ -1,120 +1,266 @@
-﻿using System;
+﻿using NUnit.Framework;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace SamplePuzzle 
+// TODO: def 기반으로 세션 생성과 초기화. 
+
+namespace SamplePuzzle
 {
-    public class PuzzleSession
+    public sealed class PuzzleSession
     {
-        private PlayerModel_OLD _playerModel;
-        private List<GhostModel> _ghostModels = new();
+        public int CurrentTick { get; private set; }
 
-        private List<ITickable> _tickables = new();
-        private List<List<MoveSnapshot>> _playerSnapshots = new();
-        private List<MoveSnapshot> _currentPlayerSnapshots = new();
+        public FixVector2 PlayerPosition => _playerBodyHandle.Position;
 
-        private List<PhysicalDoor> _doors = new();
-        private List<PhysicalButton> _buttons = new();
+        private CollisionWorld _world;
+        private PlayerActor _player;
+        private IDynamicBodyHandle _playerBodyHandle;
+        private readonly List<IBodyHandle> _bodies = new();
+        public List<ButtonState> Buttons { get; } = new();
+        public List<DoorState> Doors { get; } = new();
 
-        private PuzzleSessionConfig _setting;
+        private readonly List<IBodyHandle> _overlapHandles = new();
+        
+        private readonly Dictionary<IBodyHandle, SimId> _handleToId = new();
 
-        private int _nextRemoveGhostIndex = 0;
+        private List<FixVector2> _currentMoveRecord = new();
+        private readonly List<List<FixVector2>> _closedMoveRecords = new();
 
-        private CollisionWorld_OLD _collisionWorld = new();
+        private SimIdAllocator _idAllocator = new();
+        private readonly LevelDefinition _definition;
 
-        public PuzzleSession(PuzzleSessionConfig setting)
+        public int MaxGhosts { get; }
+        public int OldestGhostLoopIndex { get; private set; } = 0;
+        public readonly List<GhostState> _ghosts = new();
+        public PlayerState Player { get; private set; }
+
+        public PuzzleSession(LevelDefinition definition)
         {
-            _setting = setting;
+            _definition = definition ?? throw new ArgumentNullException(nameof(definition));
+            BuildLevel();
+        }
 
-            _playerModel = new PlayerModel_OLD(setting.StartPosition, setting.MoveSpeed);
-            _tickables.Add(_playerModel);
-            _collisionWorld.AddEntity(_playerModel);
+        private void BuildLevel()
+        {
+            _world = new CollisionWorld();
 
-            _playerSnapshots.Add(new());
+            SpawnPlayer(_definition.StartPosition, FixVector2.One);
 
-            foreach (var doorConfig in setting.Doors)
+            foreach (var wall in _definition.Walls)
             {
-                var door = new PuzzleDoor();
-                var physicalDoor = new PhysicalDoor(door,
-                    new AABB(Vector3.zero, new Vector3(1, 1, 0)), doorConfig.Position);
-
-                _doors.Add(physicalDoor);
-                _collisionWorld.AddEntity(physicalDoor);
+                SpawnWall(wall.Position, wall.Size);
             }
-
-            foreach (var buttonConfig in setting.Buttons)
+            foreach (var button in _definition.Buttons)
             {
-                var linkedDoor = _doors[buttonConfig.LinkedDoorIndex].Door;
-                var button = new PuzzleButton(linkedDoor);
-                var physicalButton = new PhysicalButton(button, 
-                    new AABB(Vector3.zero, new Vector3(1, 1, 0)), buttonConfig.Position);
-
-                _buttons.Add(physicalButton);
-                _collisionWorld.AddEntity(physicalButton);
-
+                SpawnButton(button.Position, button.Size, button.Id);
+            }
+            foreach (var door in _definition.Doors)
+            {
+                SpawnDoor(door.Position, door.Size, door.OpenedBy, door.Id);
             }
         }
 
-        public IReadOnlyPlayerModel Player => _playerModel;
-
-        public int GhostCount => _ghostModels.Count;
-
-        public IReadOnlyList<GhostModel> Ghosts => _ghostModels;
-
-        public IReadOnlyList<PhysicalDoor> Doors => _doors;
-        public IReadOnlyList<PhysicalButton> Buttons => _buttons;
-
-        public void AdvanceTicks(int ticks)
+        private void ClearLevel()
         {
-            for (int i = 0; i < ticks; ++i) {
-                foreach (var tickable in _tickables)
+
+        }
+
+        public void Step(GameCommand cmd = GameCommand.None)
+        {
+            var direction = CommandInterpreter.ToDirection(cmd);
+            var displacement = direction * _player.Speed;
+            _playerBodyHandle.RequestMove(displacement);
+            _currentMoveRecord.Add(displacement);
+
+            for(int i = OldestGhostLoopIndex; i<_closedMoveRecords.Count; ++i)
+            {
+                if (_closedMoveRecords[i].Count <= CurrentTick) continue;
+
+                var ghost = _ghosts[i - OldestGhostLoopIndex];
+                ghost.BodyHandle.RequestMove(_closedMoveRecords[i][CurrentTick]);
+            }
+
+            _world.ResolveMove();
+
+            _world.CheckOverlaps(_overlapHandles);
+            Debug.Log($"Tick {CurrentTick}: {_overlapHandles.Count} overlaps detected.");
+
+            for (int i = 0; i < Buttons.Count; ++i)
+            {
+                var button = Buttons[i];
+                button.Pressed = false;
+                Buttons[i] = button;
+            }
+
+            foreach (var handle in _overlapHandles)
+            {
+                if(_handleToId.TryGetValue(handle, out var id))
                 {
-                    tickable.Step();
+                    int idx = Buttons.FindIndex(x => x.Id == id);
+                    if(idx >= 0)
+                    {
+                        Debug.Log($"Button {id.Value} pressed at tick {CurrentTick}");
+                        var button = Buttons[idx];
+                        button.Pressed = true;
+                        Buttons[idx] = button;
+                    }
+                }
+            }
+
+            for(int i = 0; i < Doors.Count; ++i)
+            {
+                var door = Doors[i];
+
+                int idx = Buttons.FindIndex(x => x.Id == door.OpenedBy);
+
+                if (idx >= 0)
+                {
+                    var button = Buttons[idx];
+                    if (button.Pressed)
+                    {
+                        door.Open = true;
+                    }
+                    else
+                    {
+                        door.Open = false;
+                    }
                 }
 
-                _collisionWorld.Step();
-                _playerSnapshots[^1].Add(_playerModel.TakeSnapshot());
+                Doors[i] = door;
             }
-        }
 
-        public IReadOnlyList<MoveSnapshot> GetSnapshots(int loopIndex)
-        {
-            return _playerSnapshots[loopIndex];
-        }
-
-        public void SetPlayerMove(Vector3 direction)
-        {
-            _playerModel.SetMoveDirection(direction.normalized);
+            CurrentTick++;
         }
 
         public void TriggerLoop()
         {
-            _playerModel.SetPosition(_setting.StartPosition);
-            
-            foreach(var ghost in _ghostModels)
+            CurrentTick = 0;
+
+            _closedMoveRecords.Add(_currentMoveRecord);
+            _currentMoveRecord = new List<FixVector2>();
+
+            _world.Place(_playerBodyHandle, _definition.StartPosition);
+
+            foreach (var ghost in _ghosts)
             {
-                ghost.SetPosition(_setting.StartPosition);
-                ghost.ResetTimeline();
+                _world.RemoveDynamicBody(ghost.BodyHandle);
             }
 
-            if (Ghosts.Count >= _setting.MaxGhost)
+            _ghosts.Clear();
+            OldestGhostLoopIndex = Math.Max(0, _closedMoveRecords.Count - MaxGhosts);
+            for (int i = OldestGhostLoopIndex; i < _closedMoveRecords.Count; ++i)
             {
-                _ghostModels[_nextRemoveGhostIndex].SetTimeline(_playerSnapshots[^1]);
-                _nextRemoveGhostIndex = (_nextRemoveGhostIndex + 1) % _setting.MaxGhost;
+                var ghostPosition = _definition.StartPosition;
+                var ghostBody = _world.CreateDynamicBody(
+                    ghostPosition,
+                    FixVector2.One,
+                    FixVector2.Zero);
+                _ghosts.Add(new GhostState(i, ghostBody));
             }
-            else
+        }
+
+        public void SpawnWall(FixVector2 position, FixVector2 size)
+        {
+            _world.CreateFixedBody(
+                position,
+                size,
+                FixVector2.Zero);
+        }
+
+        public SimId SpawnPlayer(FixVector2 position, FixVector2 size) => SpawnPlayer(position, size, _idAllocator.Next());
+
+        public SimId SpawnPlayer(FixVector2 position, FixVector2 size, SimId id)
+        {
+            _idAllocator.Reserve(id);
+            _player = new PlayerActor(_definition.MoveSpeed);
+            _playerBodyHandle = _world.CreateDynamicBody(
+                position,
+                FixVector2.One,
+                FixVector2.Zero);
+            return id;
+        }
+
+        public SimId SpawnButton(FixVector2 position, FixVector2 size) => SpawnButton(position, size, _idAllocator.Next());
+
+        public SimId SpawnButton(FixVector2 position, FixVector2 size, SimId id)
+        {
+            _idAllocator.Reserve(id);
+            var state = new ButtonState(id);
+            var body = _world.CreateTriggerBody(
+                position,
+                size,
+                FixVector2.Zero);
+            _bodies.Add(body);
+            Buttons.Add(state);
+            _handleToId.Add(body, id);
+
+            return id;
+        }
+
+        public SimId SpawnDoor(FixVector2 position, FixVector2 size, SimId openedBy, bool open = false) => SpawnDoor(position, size, openedBy, _idAllocator.Next(), open);
+
+        public SimId SpawnDoor(FixVector2 position, FixVector2 size, SimId openedBy, SimId id, bool open = false)
+        {
+            _idAllocator.Reserve(id);
+            var state = new DoorState(id, openedBy, open);
+            var body = _world.CreateFixedBody(
+                position,
+                size,
+                FixVector2.Zero);
+            _bodies.Add(body);
+            Doors.Add(state);
+            _handleToId.Add(body, id);
+            return id;
+        }
+
+        public bool IsOpen(SimId door)
+        {
+            int idx = Doors.FindIndex(x => x.Id == door);
+
+            if(idx >= 0)
             {
-                var newGhost = new GhostModel(_setting.MoveSpeed);
-                _collisionWorld.AddEntity(newGhost);
-                newGhost.SetPosition(_setting.StartPosition);
-                newGhost.SetTimeline(_playerSnapshots[^1]);
-                _ghostModels.Add(newGhost);
-                _tickables.Add(newGhost);
+                return Doors[idx].Open;
             }
 
-            _playerSnapshots.Add(new());
+            throw new ArgumentException($"Door with id {door.Value} not found.");
+        }
 
-            _collisionWorld.Step();
+        public bool IsPressed(SimId button)
+        {
+            int idx = Buttons.FindIndex(x => x.Id == button);
+
+            if (idx >= 0)
+            {
+                return Buttons[idx].Pressed;
+            }
+
+            throw new ArgumentException($"Button with id {button.Value} not found.");
+        }
+
+        public IReadOnlyList<FixVector2> GetMoveRecord(int loopIndex)
+        {
+            if(loopIndex < 0 || loopIndex >= _closedMoveRecords.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(loopIndex), $"Loop index {loopIndex} is out of range.");
+            }
+
+            return _closedMoveRecords[loopIndex];
+        }
+
+        public FixVector2 GetGhostPosition(int sourceLoopIndex)
+        {
+            if(sourceLoopIndex < 0 || sourceLoopIndex >= _closedMoveRecords.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(sourceLoopIndex), $"Source loop index {sourceLoopIndex} is out of range.");
+            }
+
+            if(sourceLoopIndex < OldestGhostLoopIndex)
+            {
+                throw new InvalidOperationException($"Source loop index {sourceLoopIndex} is too old. Oldest active ghost loop index is {OldestGhostLoopIndex}.");
+            }
+
+            return _ghosts[sourceLoopIndex - OldestGhostLoopIndex].BodyHandle.Position;
         }
     }
 }
